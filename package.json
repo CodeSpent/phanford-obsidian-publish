@@ -1,0 +1,39 @@
+{
+  "name": "phanford-obsidian-publish",
+  "type": "module",
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.14.2",
+  "description": "Phanford Obsidian Publish",
+  "author": {
+    "name": "Nólëbase",
+    "email": "nolebase@ayaka.moe",
+    "url": "https://github.com/nolebase"
+  },
+  "license": "MIT",
+  "keywords": [
+    "nolebase",
+    "nolebase-integration",
+    "obsidian",
+    "obsidian-plugin"
+  ],
+  "main": "./dist/main.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "unbuild",
+    "lint": "eslint --cache .",
+    "lint:fix": "eslint --cache --fix .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^3.9.2",
+    "@codemirror/view": "^6.35.0",
+    "@types/node": "^22.9.3",
+    "builtin-modules": "^3.3.0",
+    "eslint": "^9.15.0",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.7.2",
+    "unbuild": "^2.0.0"
+  }
+}

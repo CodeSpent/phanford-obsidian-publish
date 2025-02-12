@@ -1,7 +1,7 @@
 {
   "name": "phanford-obsidian-publish",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "packageManager": "pnpm@9.14.2",
   "description": "Phanford Obsidian Publish",
   "author": {

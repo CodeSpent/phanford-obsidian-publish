@@ -1,153 +1,136 @@
 import {
-  App,
-  Plugin,
-  PluginSettingTab,
-  Setting,
-  Modal,
-  Notice,
+    type App,
+    Notice,
+    Plugin, type PluginManifest,
 } from "obsidian";
+import PublishSettingTab from "./components/publish-setting-tab";
+import PublishModal from "./components/publish-modal";
+import * as fs from "node:fs";
+import git from "isomorphic-git";
+import http from "isomorphic-git/http/node";
+
+export interface PluginSetting {
+    value: string;
+    inputType: "text" | "password" | "number";
+    description: string;
+    placeholder: string;
+}
+
+export interface IPublishPluginSettings {
+    [key: string]: PluginSetting;
+}
+
+export const DEFAULT_SETTINGS: IPublishPluginSettings = {
+    repo: {
+        value: "",
+        inputType: "text",
+        description: "URL of GitHub repository to publish content to.",
+        placeholder: "https://github.com/user/repo",
+    },
+    gitRemote: {
+        value: "origin",
+        inputType: "text",
+        description: "Git remote to publish content to.",
+        placeholder: "origin",
+    },
+    gitRef: {
+        value: "main",
+        inputType: "text",
+        description: "Git reference to publish content to.",
+        placeholder: "main",
+    },
+    githubUsername: {
+        value: "",
+        inputType: "text",
+        description: "Username for GitHub authentication.",
+        placeholder: "Enter your GitHub username."
+    },
+    githubToken: {
+        value: "",
+        inputType: "password",
+        description: "Personal Access Token for GitHub authentication.",
+        placeholder: "Enter your GitHub token.",
+    },
+    gitAuthorName: {
+        value: "",
+        inputType: "text",
+        description: "Git author name.",
+        placeholder: "Enter your name.",
+    },
+    gitAuthorEmail: {
+        value: "",
+        inputType: "text",
+        description: "Git author email.",
+        placeholder: "Enter your email.",
+    },
+};
+
 
 export default class PublishPlugin extends Plugin {
-  async onload() {
-    console.log("PublishPlugin loaded");
 
-    // Add a settings tab in the Obsidian preferences UI
-    this.addSettingTab(new PublishSettingTab(this.app, this));
+    settings: IPublishPluginSettings = DEFAULT_SETTINGS as IPublishPluginSettings;
 
-    // Add a "Publish" command to your plugin settings tab
-    this.addCommand({
-      id: "publish-content",
-      name: "Publish Content",
-      callback: () => {
-        // Opens the modal to set content type and frontmatter
-        new PublishModal(this.app).open();
-      },
-    });
-  }
+    constructor(app: App, manifest: PluginManifest) {
+        super(app, manifest);
+    }
+    
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
 
-  onunload() {
-    console.log("PublishPlugin unloaded");
-  }
-}
+    async saveSettings() {
+        await this.saveData(this.settings);
+    }
 
-// Modal to handle the "Publish" form
-class PublishModal extends Modal {
-  contentType: string; // Stores selected content type from dropdown
-  frontmatter: Record<string, string> = {}; // Stores frontmatter key-value pairs
+    async onload() {
+        await this.loadSettings();
+        this.addSettingTab(new PublishSettingTab(this.app, this));
 
-  constructor(app: App) {
-    super(app);
-    // Set default content type
-    this.contentType = "";
-  }
+        this.addCommand({
+            id: "publish-content",
+            name: "Publish Content",
+            callback: () => {
+                new PublishModal(this.app, this).open();
+            },
+        });
+    }
 
-  onOpen() {
-    const { contentEl } = this;
+    async publishContent() {
+        try {
+            const repoPath = "/tmp/repo"; // TODO: Add actual path to avoid permission issues
 
-    // Title of Modal
-    contentEl.createEl("h2", { text: "Publish Content" });
+            if (!fs.existsSync(repoPath)) {
+                fs.mkdirSync(repoPath, { recursive: true });
+               await git.init({ fs, dir: repoPath });
+            }
 
-    // Dropdown for content type
-    const dropdown = contentEl.createEl("select", { cls: "dropdown" });
-    ["Blog", "Note", "Tutorial", "Other"].forEach((type) => {
-      const option = dropdown.createEl("option", { text: type });
-      if (type === this.contentType) option.selected = true;
-    });
+            const filePath = `${repoPath}/content.md`
+            fs.writeFileSync(filePath, "This is a test file");
 
-    dropdown.onchange = (event) => {
-      this.contentType = (event.target as HTMLSelectElement).value;
-    };
+            await git.add({ fs, dir: repoPath, filepath: "content.md" });
 
-    // Input Blocks for Frontmatter
-    const frontmatterSection = contentEl.createEl("div", { cls: "frontmatter-fields" });
-    this.addFrontmatterField(frontmatterSection); // Add the first key-value pair input by default
+            await git.commit({ fs, dir: repoPath, message: "Initial commit" });
 
-    const addFieldButton = contentEl.createEl("button", { text: "Add Field" });
-    addFieldButton.onclick = () => this.addFrontmatterField(frontmatterSection);
+            await git.push({
+                fs,
+                http: http,
+                dir: repoPath,
+                remote: this.settings.gitRemote.value,
+                ref: this.settings.gitRef.value,
+                onAuth: () => {
+                    return {
+                        username: this.settings.githubToken.value,
+                        password: "",
+                    }
+                }
+            })
+        } catch (error) {
+            new Notice("Error publishing content: " + error);
+        } finally {
+            new Notice("Content published successfully!");
+        }
+    }
 
-    // Submit Publishing Action
-    const submitButton = contentEl.createEl("button", { text: "Publish" });
-    submitButton.onclick = () => {
-      if (!this.contentType) {
-        new Notice("Please select a content type.");
-        return;
-      }
-
-      console.log("Content Type:", this.contentType);
-      console.log("Frontmatter:", this.frontmatter);
-
-      // Simulate publishing (replace with GitHub implementation later)
-      new Notice("Your content is being published...");
-
-      // Clear fields and Close Modal
-      this.close();
-    };
-  }
-
-  addFrontmatterField(container: HTMLElement) {
-    const field = container.createEl("div", { cls: "frontmatter-field" });
-
-    const keyInput = field.createEl("input", {
-      type: "text",
-      placeholder: "Key (e.g., title)",
-    });
-    const valueInput = field.createEl("input", {
-      type: "text",
-      placeholder: "Value (e.g., My First Post)",
-    });
-
-    // Add logic to store values into the frontmatter object
-    keyInput.oninput = () => {
-      const key = keyInput.value.trim();
-      const value = valueInput.value.trim();
-      if (key) this.frontmatter[key] = value;
-    };
-    valueInput.oninput = () => {
-      const key = keyInput.value.trim();
-      const value = valueInput.value.trim();
-      if (key) this.frontmatter[key] = value;
-    };
-
-    // Remove Button to delete the field
-    const removeButton = field.createEl("button", { text: "Remove" });
-    removeButton.onclick = () => {
-      delete this.frontmatter[keyInput.value.trim()]; // Clean up the frontmatter entry
-      container.removeChild(field); // Remove the UI field
-    };
-
-    container.appendChild(field);
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
-
-// Options tab to manage plugin settings (Placeholder for future configuration)
-class PublishSettingTab extends PluginSettingTab {
-  plugin: PublishPlugin;
-
-  constructor(app: App, plugin: PublishPlugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-
-  display(): void {
-    const { containerEl } = this;
-
-    containerEl.empty();
-    containerEl.createEl("h2", { text: "Publish Plugin Settings" });
-
-    // Example setting (can be extended to manage GitHub repository details)
-    new Setting(containerEl)
-      .setName("Repository URL")
-      .setDesc("The GitHub repository to publish content to.")
-      .addText((text) =>
-        text.setPlaceholder("https://github.com/user/repo").onChange((value) => {
-          console.log("Repository URL:", value);
-          // Save URL or other settings logic here
-        }),
-      );
-  }
+    onunload() {
+    }
 }

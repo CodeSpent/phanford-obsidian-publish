@@ -1,13 +1,12 @@
 {
   "name": "phanford-obsidian-publish",
-  "type": "module",
   "version": "0.0.1",
   "packageManager": "pnpm@9.14.2",
   "description": "Phanford Obsidian Publish",
   "author": {
-    "name": "Nólëbase",
-    "email": "nolebase@ayaka.moe",
-    "url": "https://github.com/nolebase"
+    "name": "Patrick Hanford",
+    "email": "pat@phanford.dev",
+    "url": "https://phanford.dev/"
   },
   "license": "MIT",
   "keywords": [
@@ -21,19 +20,28 @@
     "dist"
   ],
   "scripts": {
-    "build": "unbuild",
+    "build": "node esbuild.config.mjs production",
     "lint": "eslint --cache .",
     "lint:fix": "eslint --cache --fix .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "symlink": "mkdir -p \"$OBSIDIAN_PLUGINS_PATH/$OBSIDIAN_PLUGIN_NAME\" && ln -sfn \"$(pwd)/dist/\"* \"$OBSIDIAN_PLUGINS_PATH/$OBSIDIAN_PLUGIN_NAME/\""
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^3.9.2",
     "@codemirror/view": "^6.35.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.9.3",
     "builtin-modules": "^3.3.0",
-    "eslint": "^9.15.0",
     "obsidian": "^1.7.2",
-    "typescript": "^5.7.2",
-    "unbuild": "^2.0.0"
+    "tslib": "^2.8.1",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.0",
+    "fs": "0.0.1-security",
+    "isomorphic-git": "1.27.1",
+    "js-yaml": "^4.1.0",
+    "process": "^0.11.10",
+    "slugify": "^1.6.6",
+    "yaml": "^2.7.0"
   }
 }

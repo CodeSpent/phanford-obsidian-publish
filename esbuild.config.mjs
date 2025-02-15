@@ -1,7 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 
-const prod = process.argv[2] === "productionn";
+const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
   entryPoints: ["src/main.ts"],

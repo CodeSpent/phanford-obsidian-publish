@@ -1,9 +1,12 @@
 import { App, Modal, Notice } from "obsidian";
 import ContentService from "../services/content";
 import GitService from "../services/git";
+import slugify from "slugify";
 
 export default class PublishModal extends Modal {
   contentType: string = "Article";
+  branch: string = this.plugin.settings.gitRef.value;
+  commitMessage: string = "";
 
   constructor(app: App, private plugin: any) {
     super(app);
@@ -15,9 +18,34 @@ export default class PublishModal extends Modal {
 
     contentEl.createEl("h2", { text: "Publish Content" });
 
-    this.createContentTypeDropdown(contentEl);
+    const diffContainer = contentEl.createDiv({ cls: "diff-container" });
+    diffContainer.createEl("h3", { text: "Changes Preview:" });
+
+    const diffBox = diffContainer.createEl("pre", { cls: "git-diff" });
+    diffBox.style.whiteSpace = "pre-wrap";
+    diffBox.style.overflowY = "auto";
+    diffBox.style.maxHeight = "300px";
+
+    this.loadDiff(diffBox).then(r => r);
+    this.createBranchInput(contentEl).then(r => r);
+
+    const commitMessageContainer = contentEl.createDiv({ cls: "commit-message-container" });
+    commitMessageContainer.createEl("h3", { text: "Write Commit Message:" });
+
+    const commitMessageInput = commitMessageContainer.createEl("textarea", {
+      cls: "commit-message-input",
+      placeholder: "Enter your commit message here...",
+    });
+    commitMessageInput.style.width = "100%";
+    commitMessageInput.style.minHeight = "100px";
+    commitMessageInput.focus();
+
+    commitMessageInput.oninput = (event) => {
+      this.commitMessage = (event.target as HTMLTextAreaElement).value;
+    };
 
     const submitButton = contentEl.createEl("button", { text: "Publish" });
+    submitButton.style.marginTop = "20px";
     submitButton.onclick = async () => {
       try {
         await this.handlePublish();
@@ -29,6 +57,54 @@ export default class PublishModal extends Modal {
     };
   }
 
+  /**
+   * Loads and displays the diff for the current note.
+   */
+  async loadDiff(diffBox: HTMLElement) {
+    try {
+      const articleTitle = ContentService.getActiveNoteName(this.app);
+      const cleanTitle = articleTitle.replace(/\.[^/.]+$/, "");
+      const filePath = `articles/${slugify(cleanTitle, { lower: true, strict: true })}/index.mdx`;
+
+      const diff = await GitService.getFileDiff("/tmp/", filePath, this.plugin.settings.gitRef.value);
+
+      if (!diff) {
+        diffBox.textContent = "No changes detected.";
+      } else {
+        diffBox.textContent = diff;
+      }
+    } catch (error) {
+      console.error("Error generating diff:", error);
+      diffBox.textContent = "Failed to display the diff.";
+    }
+  }
+
+  /**
+   * Creates a dropdown menu to select the Git branch.
+   */
+  async createBranchInput(container: HTMLElement) {
+    const branchLabel = container.createEl("h3", { text: "Enter Branch Name:" });
+
+    const branchInput = container.createEl("input", {
+      type: "text",
+      cls: "branch-input",
+      value: this.plugin.settings.gitRef.value,
+    });
+
+    branchInput.style.width = "100%";
+    branchInput.style.marginBottom = "10px";
+
+    branchInput.oninput = (event) => {
+      this.branch = (event.target as HTMLInputElement).value;
+      console.log("Updated branch input:", this.branch);
+    };
+
+    container.appendChild(branchInput);
+  }
+
+  /**
+   * Handles the publish operation.
+   */
   async handlePublish() {
     const { app } = this;
     const {
@@ -38,8 +114,12 @@ export default class PublishModal extends Modal {
       gitAuthorEmail,
       githubUsername,
       gitRemote,
-      gitRef,
     } = this.plugin.settings;
+
+    if (!this.commitMessage.trim()) {
+      new Notice("Commit message cannot be empty.");
+      return;
+    }
 
     const gitAuthor = {
       name: gitAuthorName.value,
@@ -58,12 +138,13 @@ export default class PublishModal extends Modal {
           tempPath,
           repo.value,
           gitRemote.value,
-          gitRef.value,
+          this.branch,
           githubToken.value,
           githubUsername.value,
           cleanTitle,
           content,
-          gitAuthor
+          gitAuthor,
+          this.commitMessage
       );
 
       new Notice("Content published successfully!");
@@ -73,22 +154,7 @@ export default class PublishModal extends Modal {
     }
   }
 
-  createContentTypeDropdown(container: HTMLElement) {
-    const dropdown = container.createEl("select", { cls: "dropdown" });
-
-    ["Article", "Note"].forEach((type) => {
-      const option = dropdown.createEl("option", { text: type });
-      if (type === this.contentType) option.selected = true;
-    });
-
-    dropdown.onchange = (event) => {
-      this.contentType = (event.target as HTMLSelectElement).value;
-    };
-
-    container.appendChild(dropdown);
-  }
-
-  onClose() {
+  async onClose() {
     this.contentEl.empty();
   }
 }

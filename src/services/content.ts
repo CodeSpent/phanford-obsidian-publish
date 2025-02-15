@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import slugify from "slugify";
-import { App } from "obsidian";
+import {App} from "obsidian";
 import GitService from "./git";
 
 class ContentService {
@@ -11,7 +11,7 @@ class ContentService {
    */
   static ensureDirectoryExists(targetDirectory: string): void {
     if (!fs.existsSync(targetDirectory)) {
-      fs.mkdirSync(targetDirectory, { recursive: true });
+      fs.mkdirSync(targetDirectory, {recursive: true});
       console.log(`Created directory: ${targetDirectory}`);
     }
   }
@@ -84,8 +84,10 @@ class ContentService {
       username: string,
       articleTitle: string,
       content: string,
-      author: { name: string; email: string }
-  ): Promise<void> {
+      author: {
+        name: string;
+        email: string;
+      }, commitMessage: string): Promise<void> {
 
     console.log(`Preparing to publish article: ${articleTitle}`);
 
@@ -102,10 +104,10 @@ class ContentService {
     this.writeToFile(filePath, content);
 
     const relativeFilePath = path.relative(repoPath, filePath);
-    const commitMessage = `content: ${subDir}/${slug}: ${fileName}`;
+    const builtCommitMessage = `content: ${commitMessage}\n\n${subDir}/${slug}`
 
     await GitService.stageFile(repoPath, relativeFilePath);
-    await GitService.commitChanges(repoPath, commitMessage, author);
+    await GitService.commitChanges(repoPath, builtCommitMessage, author);
     await GitService.pullChanges(repoPath, username, author, token, gitRemote, gitRef);
     await GitService.pushChanges(repoPath, username, token, gitRemote, gitRef);
   }

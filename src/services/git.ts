@@ -1,6 +1,7 @@
 import * as git from "isomorphic-git";
 import http from "isomorphic-git/http/node";
 import fs from "fs";
+import {createPatch} from "diff";
 
 class GitService {
   /**
@@ -110,6 +111,55 @@ class GitService {
     });
     console.log("Pushed changes to remote repository.");
   }
+
+  /**
+   * Lists all available branches in the repository.
+   * @param repoPath - Local repository path.
+   * @param remote - Whether to list remote or local branches (optional, defaults to local).
+   * @returns Array of branch names.
+   */
+  static async listBranches(repoPath: string, remote: boolean = false): Promise<string[]> {
+    try {
+      const branches = await git.listBranches({
+        fs,
+        dir: repoPath,
+        remote: remote ? "origin" : undefined,
+      });
+      console.log(remote ? "Remote branches:" : "Local branches:", branches);
+
+      return branches;
+    } catch (error) {
+      console.error("Error listing branches:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Gets the diff between the current local content and the last committed state.
+   * @param repoPath - Path to the Git repository.
+   * @param filePath - File path relative to the repo root.
+   * @param branch - The branch or ref to compare against (defaults to HEAD).
+   * @returns The file diff as a string.
+   */
+  static async getFileDiff(repoPath: string, filePath: string, branch: string = "HEAD"): Promise<string> {
+    const headFileBlob = await git.readBlob({
+      fs,
+      dir: repoPath,
+      oid: await git.resolveRef({ fs, dir: repoPath, ref: branch }),
+      filepath: filePath,
+    }).catch(() => ({ blob: null }));
+
+    const localFileContent = fs.existsSync(`${repoPath}/${filePath}`)
+        ? fs.readFileSync(`${repoPath}/${filePath}`, "utf8")
+        : "";
+
+    const headFileContent = headFileBlob.blob
+        ? new TextDecoder("utf-8").decode(headFileBlob.blob)
+        : "";
+
+    return createPatch(filePath, headFileContent, localFileContent);
+  }
+
 }
 
 export default GitService;

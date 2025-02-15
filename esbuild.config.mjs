@@ -39,8 +39,6 @@ const context = await esbuild.context({
 });
 
 
-// TODO: Generate manifest.json in the dist dir
-
 if (prod) {
   console.log("Building for production...");
   await context.rebuild();

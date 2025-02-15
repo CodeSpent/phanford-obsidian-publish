@@ -95,42 +95,8 @@ export default class PublishPlugin extends Plugin {
         });
     }
 
-    async publishContent() {
-        try {
-            const repoPath = "/tmp/repo"; // TODO: Add actual path to avoid permission issues
-
-            if (!fs.existsSync(repoPath)) {
-                fs.mkdirSync(repoPath, { recursive: true });
-               await git.init({ fs, dir: repoPath });
-            }
-
-            const filePath = `${repoPath}/content.md`
-            fs.writeFileSync(filePath, "This is a test file");
-
-            await git.add({ fs, dir: repoPath, filepath: "content.md" });
-
-            await git.commit({ fs, dir: repoPath, message: "Initial commit" });
-
-            await git.push({
-                fs,
-                http: http,
-                dir: repoPath,
-                remote: this.settings.gitRemote.value,
-                ref: this.settings.gitRef.value,
-                onAuth: () => {
-                    return {
-                        username: this.settings.githubToken.value,
-                        password: "",
-                    }
-                }
-            })
-        } catch (error) {
-            new Notice("Error publishing content: " + error);
-        } finally {
-            new Notice("Content published successfully!");
-        }
-    }
 
     onunload() {
+        // TODO: Research what clean up is necessary
     }
 }

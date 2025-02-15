@@ -1,36 +1,41 @@
-import yaml from "js-yaml";
-import { App } from "obsidian";
 import fs from "fs";
+import path from "path";
+import slugify from "slugify";
+import { App } from "obsidian";
+import GitService from "./git";
 
 class ContentService {
   /**
-   * Reads the content of a note file.
-   * @param filePath - The path to the note file.
-   * @returns The raw note content as a string.
+   * Ensures a directory exists at the specified target path, creating it if necessary.
+   * @param targetDirectory - Full path to the required directory.
    */
-  static async readNoteContent(filePath: string): Promise<string> {
-    return fs.promises.readFile(filePath, "utf-8");
+  static ensureDirectoryExists(targetDirectory: string): void {
+    if (!fs.existsSync(targetDirectory)) {
+      fs.mkdirSync(targetDirectory, { recursive: true });
+      console.log(`Created directory: ${targetDirectory}`);
+    }
   }
 
   /**
-   * Writes updated content to a note file.
-   * @param filePath - The path to the note file.
-   * @param content - The content to write to the note file.
+   * Writes the given content to a specified file path, creating or overwriting the file.
+   * @param filePath - Full path to the target file.
+   * @param content - Content to write to the file.
    */
-  static async writeNoteContent(filePath: string, content: string): Promise<void> {
-    await fs.promises.writeFile(filePath, content, "utf-8");
+  static writeToFile(filePath: string, content: string): void {
+    fs.writeFileSync(filePath, content, "utf8");
+    console.log(`File written to: ${filePath}`);
   }
 
   /**
-   * Gets the active note's content (if available).
-   * @param app - The Obsidian app instance.
-   * @returns A promise resolving to the note content.
-   * @throws An error if no active note is found.
+   * Constructs the target file path for an article.
+   * @param repoPath - Repository's root directory.
+   * @param subDir - Subdirectory where the article resides (e.g., "articles").
+   * @param slug - Slugified title for the article directory.
+   * @param fileName - Target file name (e.g., "index.mdx").
+   * @returns Full path to the target file.
    */
-  static async getActiveNoteContent(app: App): Promise<string> {
-    const activeFile = app.workspace.getActiveFile();
-    if (!activeFile) throw new Error("No active note selected.");
-    return await app.vault.read(activeFile);
+  static getTargetFilePath(repoPath: string, subDir: string, slug: string, fileName: string): string {
+    return path.join(repoPath, subDir, slug, fileName);
   }
 
   /**
@@ -46,45 +51,63 @@ class ContentService {
   }
 
   /**
-   * Gets the path of the currently active note.
+   * Gets the active note's content.
    * @param app - The Obsidian app instance.
-   * @returns The path of the active note.
+   * @returns A promise resolving to the note content.
    * @throws An error if no active note is found.
    */
-  static getActiveNotePath(app: App): string {
+  static async getActiveNoteContent(app: App): Promise<string> {
     const activeFile = app.workspace.getActiveFile();
     if (!activeFile) throw new Error("No active note selected.");
-    return activeFile.path;
+    return await app.vault.read(activeFile);
   }
 
   /**
-   * Applies frontmatter to the given note content.
-   * If frontmatter already exists in the content, it will replace it with the new frontmatter.
-   * @param frontmatter - The frontmatter object to apply.
-   * @param content - The raw note content.
-   * @returns The updated content with the applied frontmatter.
+   * Publishes an article by creating directories/files in the cloned repository
+   * and delegating Git operations to GitService.
+   * @param repoPath - Repository root directory (temporary local clone).
+   * @param remoteUrl - URL of the Git remote repository.
+   * @param gitRemote - Git remote.
+   * @param gitRef - Git ref (branch).
+   * @param token - GitHub access token for authentication.
+   * @param username - GitHub username.
+   * @param articleTitle - Title of the article.
+   * @param content - Content of the article formatted as markdown.
+   * @param author - Git author information { name, email }.
    */
-  static applyFrontmatterToContent(frontmatter: Record<string, any>, content: string): string {
-    const frontmatterString = `---\n${yaml.dump(frontmatter)}---\n\n`;
+  static async publishArticle(
+      repoPath: string,
+      remoteUrl: string,
+      gitRemote: string,
+      gitRef: string,
+      token: string,
+      username: string,
+      articleTitle: string,
+      content: string,
+      author: { name: string; email: string }
+  ): Promise<void> {
 
-    const frontmatterRegex = /^---\n[\s\S]*?\n---\n/;
-    if (frontmatterRegex.test(content)) {
-      return content.replace(frontmatterRegex, frontmatterString);
-    }
-    return frontmatterString + content;
-  }
+    console.log(`Preparing to publish article: ${articleTitle}`);
 
-  /**
-   * Processes the note by applying the frontmatter and saving the updated content to the file.
-   * @param filePath - Path to the note file.
-   * @param frontmatter - Frontmatter object provided by Publish Modal.
-   * @returns The final updated content with the applied frontmatter.
-   */
-  static async processNote(filePath: string, frontmatter: Record<string, any>): Promise<string> {
-    const content = await this.readNoteContent(filePath);
-    const updatedContent = this.applyFrontmatterToContent(frontmatter, content);
-    await this.writeNoteContent(filePath, updatedContent);
-    return updatedContent;
+    await GitService.cloneRepository(repoPath, remoteUrl, username, token);
+
+    const slug = slugify(articleTitle, {lower: true, strict: true});
+
+    const subDir = "articles";
+    const fileName = "index.mdx";
+    const filePath = this.getTargetFilePath(repoPath, subDir, slug, fileName);
+
+    this.ensureDirectoryExists(path.dirname(filePath));
+
+    this.writeToFile(filePath, content);
+
+    const relativeFilePath = path.relative(repoPath, filePath);
+    const commitMessage = `content: ${subDir}/${slug}: ${fileName}`;
+
+    await GitService.stageFile(repoPath, relativeFilePath);
+    await GitService.commitChanges(repoPath, commitMessage, author);
+    await GitService.pullChanges(repoPath, username, author, token, gitRemote, gitRef);
+    await GitService.pushChanges(repoPath, username, token, gitRemote, gitRef);
   }
 }
 

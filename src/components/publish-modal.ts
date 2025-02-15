@@ -31,31 +31,40 @@ export default class PublishModal extends Modal {
 
   async handlePublish() {
     const { app } = this;
-    const { repo, githubToken, gitAuthorName, gitAuthorEmail, githubUsername } = this.plugin.settings;
+    const {
+      repo,
+      githubToken,
+      gitAuthorName,
+      gitAuthorEmail,
+      githubUsername,
+      gitRemote,
+      gitRef,
+    } = this.plugin.settings;
 
     const gitAuthor = {
-      name: gitAuthorName,
-      email: gitAuthorEmail,
-    }
-    // Get active note info
+      name: gitAuthorName.value,
+      email: gitAuthorEmail.value,
+    };
+
     const articleTitle = ContentService.getActiveNoteName(app);
+    const cleanTitle = articleTitle.replace(/\.[^/.]+$/, "");
+
     const content = await ContentService.getActiveNoteContent(app);
 
-    const repoPath = "/tmp/temp-content-repo";
+    const tempPath = "/tmp/";
 
     try {
-      // Clone or prepare the repository
-      // TODO: We should create an instance of GitService to use
-      await GitService.prepareRepository(repoPath, repo, githubToken, githubUsername);
-
-      // Publish article with proper structure
-      // TODO: Username & Token API is not clean, we could improve this
-      // to reduce as many errors.
-      //
-      // It is also worth investigating why publishArticle doesn't
-      // prompt a typescript error when passing a {} when expecting
-      // a string.
-      await GitService.publishArticle(repoPath, articleTitle, content, gitAuthor, githubUsername.value, githubToken.value);
+      await ContentService.publishArticle(
+          tempPath,
+          repo.value,
+          gitRemote.value,
+          gitRef.value,
+          githubToken.value,
+          githubUsername.value,
+          cleanTitle,
+          content,
+          gitAuthor
+      );
 
       new Notice("Content published successfully!");
     } catch (error) {

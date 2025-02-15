@@ -1,156 +1,114 @@
-import fs from "fs";
-import path from "path";
 import * as git from "isomorphic-git";
 import http from "isomorphic-git/http/node";
-import slugify from "slugify";
+import fs from "fs";
 
 class GitService {
   /**
-   * Prepares the local repository for use (clone or ensure exists).
-   * @param repoPath - Local path for the repository.
-   * @param remoteUrl - Remote URL of the repository to clone (if not initialized).
-   * @param token - Authentication token for private repositories.
+   * Clones a Git repository into the specified local directory.
+   * @param repoPath - Local directory to clone the repository into.
+   * @param remoteUrl - URL of the remote Git repository.
+   * @param username - Authentication username (e.g., GitHub username).
+   * @param token - Personal Access Token (PAT) for authentication.
    */
-  static async prepareRepository(repoPath: string, remoteUrl: string, token: string, username: string): Promise<void> {
-    if (!fs.existsSync(repoPath)) {
-      console.log(`Cloning repository to ${repoPath}...`);
-      await git.clone({
-        fs,
-        http,
-        dir: repoPath,
-        url: remoteUrl,
-        onAuth: token
-            ? () => ({
-              username: username,
-              password: token,
-            })
-            : undefined,
-      });
-    } else {
-      console.log(`Repository already exists at ${repoPath}`);
-    }
+  static async cloneRepository(repoPath: string, remoteUrl: string, username: string, token: string): Promise<void> {
+    console.log(`Cloning repository from ${remoteUrl} to ${repoPath}`);
 
-    // Ensure the repository is initialized properly with a default branch and an initial commit.
-    await this.ensureInitialCommit(repoPath, "main");
+    await git.clone({
+      fs,
+      http,
+      dir: repoPath,
+      url: remoteUrl,
+      singleBranch: true,
+      depth: 1,
+      onAuth: () => ({ username, password: token }),
+    });
+
+    console.log("Repository cloned successfully.");
   }
 
   /**
-   * Ensures the repository has an initial commit and explicitly sets the default branch if HEAD is not found.
+   * Stages a file for commit.
+   * @param repoPath - Local repository path.
+   * @param filePath - File path to stage (relative to the repository root).
    */
-  static async ensureInitialCommit(repoPath: string, defaultBranch: string): Promise<void> {
-    try {
-      const hasHead = await git.resolveRef({ fs, dir: repoPath, ref: "HEAD" }).catch(() => null);
-
-      if (!hasHead) {
-        console.log("HEAD not found. Performing repository initialization...");
-        await git.init({ fs, dir: repoPath, defaultBranch });
-        const readmePath = path.join(repoPath, "README.md");
-        if (!fs.existsSync(readmePath)) {
-          fs.writeFileSync(readmePath, "# Initial Commit\n");
-          console.log(`Created initial file: ${readmePath}`);
-        }
-        await git.add({ fs, dir: repoPath, filepath: "README.md" });
-        await git.commit({
-          fs,
-          dir: repoPath,
-          message: "Initial commit",
-          author: { name: "Default Author", email: "default@example.com" },
-        });
-        console.log("Initial commit created.");
-      } else {
-        console.log("Repository already has HEAD.");
-      }
-    } catch (error) {
-      console.error("Failed to create initial commit:", error);
-      throw error;
-    }
+  static async stageFile(repoPath: string, filePath: string): Promise<void> {
+    await git.add({ fs, dir: repoPath, filepath: filePath });
+    console.log(`Staged file: ${filePath}`);
   }
 
   /**
-   * Publishes an article to the repository.
-   * @param repoPath - Local path to the repository.
-   * @param articleTitle - The article's title, used for directory slugging.
-   * @param content - Content to write to the file.
-   * @param author - Git author information ({ name, email }).
-   * @param username - GitHub Username.
-   * @param token - GitHub Personal Access Token (PAT).
+   * Commits staged changes to the repository.
+   * @param repoPath - Local repository path.
+   * @param message - Commit message.
+   * @param author - Git author information { name, email }.
    */
-  static async publishArticle(
+  static async commitChanges(
       repoPath: string,
-      articleTitle: string,
-      content: string,
-      author: { name: string; email: string },
-      username: string,
-      token: string
+      message: string,
+      author: { name: string; email: string }
   ): Promise<void> {
-
-
-    try {
-      const sluggedTitle = slugify(articleTitle, {lower: true, strict: true});
-      const targetDirectory = path.join("articles", sluggedTitle);
-      const fileName = "index.mdx";
-
-      this.ensureDirectoryExists(repoPath, targetDirectory);
-
-      const filePath = path.join(repoPath, targetDirectory, fileName);
-      fs.writeFileSync(filePath, content);
-      console.log(`File created at: ${filePath}`);
-
-      await git.add({fs, dir: repoPath, filepath: path.join(targetDirectory, fileName)});
-
-      const commitMessage = this.constructCommitMessage(fileName, targetDirectory);
-      await git.commit({
-        fs,
-        dir: repoPath,
-        message: commitMessage,
-        author,
-      });
-      console.log(`Committed changes with message: "${commitMessage}"`);
-
-      console.log("Pushing changes to the remote...");
-      console.table({
-        repoPath,
-        targetDirectory,
-        fileName,
-        commitMessage,
-        author,
-        username,
-
-      })
-      await git.push({
-        fs,
-        http,
-        dir: repoPath,
-        remote: "origin",
-        ref: "main",
-        onAuth: () => (
-            {username: token, password: 'x-oauth-basic'}
-        ),
-      });
-      console.log("Changes pushed successfully!");
-    } catch (error) {
-      console.error("Error publishing article:", error);
-      throw error;
-    }
+    await git.commit({
+      fs,
+      dir: repoPath,
+      message,
+      author,
+    });
+    console.log(`Committed changes with message: "${message}"`);
   }
 
   /**
-   * Ensures the target directory exists or creates it.
+   * Pulls the latest changes from the remote repository.
+   * @param repoPath - Local repository path.
+   * @param username - Authentication username (GitHub username).
+   * @param author - Git author name & email.
+   * @param token - Personal Access Token (PAT) for authentication.
+   * @param remote - Git remote name (e.g., "origin").
+   * @param ref - Git ref (branch) to pull.
    */
-  static ensureDirectoryExists(repoPath: string, targetDirectory: string): void {
-    const targetPath = path.join(repoPath, targetDirectory);
-    if (!fs.existsSync(targetPath)) {
-      fs.mkdirSync(targetPath, { recursive: true });
-      console.log(`Created directory: ${targetPath}`);
-    }
+  static async pullChanges(
+      repoPath: string,
+      username: string,
+      author: { name: string; email: string },
+      token: string,
+      remote: string,
+      ref: string
+  ): Promise<void> {
+    await git.pull({
+      fs,
+      http,
+      dir: repoPath,
+      remote: remote,
+      ref: ref,
+      onAuth: () => ({ username, password: token }),
+      singleBranch: true,
+      author: author
+    });
+    console.log(`Pulled latest changes from ${remote}/${ref}`);
   }
 
   /**
-   * Constructs a commit message.
-   * Example: "Publish articles/my-article-slug: index.mdx"
+   * Pushes the local changes to the remote repository.
+   * @param repoPath - Local repository path.
+   * @param username - Authentication username (GitHub username).
+   * @param token - Personal Access Token (PAT) for authentication.
+   * @param remote - Git remote.
+   * @param ref - Git ref (branch).
    */
-  static constructCommitMessage(fileName: string, directory: string): string {
-    return `Publish ${directory}: ${fileName}`;
+  static async pushChanges(
+      repoPath: string,
+      username: string,
+      token: string,
+      remote: string,
+      ref: string): Promise<void> {
+    await git.push({
+      fs,
+      http,
+      dir: repoPath,
+      remote: remote,
+      ref: ref,
+      onAuth: () => ({ username, password: token }),
+    });
+    console.log("Pushed changes to remote repository.");
   }
 }
 
